@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Merge Coin</title><style>
+*{box-sizing:border-box}body{margin:0;background:#0d1524;color:#fff;font-family:system-ui,sans-serif}.app{max-width:500px;margin:auto;padding:16px}
+.card{background:#17243a;border-radius:16px;padding:14px;margin:10px 0}.row{display:flex;gap:7px}.row>*{flex:1}
+input,button{width:100%;padding:12px;border:0;border-radius:11px;margin-top:7px;font-size:15px}button{background:#ffd34d;font-weight:800;cursor:pointer}
+input{background:#0e1727;color:#fff;border:1px solid #31425f}.muted{opacity:.65;font-size:13px}.code{text-align:center;font-size:24px;font-weight:900;letter-spacing:3px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.stat{text-align:center;background:#20304a;border-radius:12px;padding:9px}.stat b{display:block;font-size:18px}
+#board{height:390px;background:#17243a;border:2px solid #2b3c5d;border-radius:18px;padding:8px;display:grid;grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(7,1fr);gap:6px}
+.cell{background:#22324d;border-radius:9px;display:flex;align-items:center;justify-content:center;cursor:pointer}.cell.sel{outline:3px solid #ffd34d}.coin{font-size:24px}.lv{font-size:10px;opacity:.7;text-align:center}
+#game{display:none}.danger{background:#33445f;color:#fff}.msg{min-height:18px;margin-top:8px;font-size:13px;color:#ffd34d}
+</style></head><body><div class="app">
+<h1>🪙 Merge Coin</h1><div class="muted">เวอร์ชันพร้อมต่อยอด production</div>
+<div id="auth" class="card"><h3 id="authTitle">สร้างบัญชี</h3>
+<input id="username" placeholder="Username">
+<input id="password" type="password" placeholder="Password (อย่างน้อย 8 ตัว)">
+<input id="ref" placeholder="Referral Code (ถ้ามี)">
+<div class="row"><button onclick="register()">สมัคร</button><button class="danger" onclick="login()">เข้าสู่ระบบ</button></div><div id="msg" class="msg"></div></div>
+
+<div id="game">
+<div class="card"><div class="stats"><div class="stat">💰<b id="coins">0</b>เหรียญ</div><div class="stat">⚡<b id="energy">0</b>พลังงาน</div><div class="stat">⭐<b id="level">1</b>เลเวล</div></div></div>
+<div class="card"><div class="muted">บัญชี</div><b id="user"></b><p>🔗 รหัสเชิญ: <b id="code"></b><br>👥 เชิญสำเร็จ: <b id="refs">0</b></p>
+<div class="row"><button onclick="copyCode()">คัดลอกรหัส</button><button onclick="daily()">🎁 Daily +50</button></div></div>
+<div id="board"></div><button onclick="spawn()">สร้างเหรียญ (-1 ⚡)</button>
+<div class="row"><button class="danger" onclick="logout()">ออกจากระบบ</button><button class="danger" onclick="leaderboard()">🏆 อันดับ</button></div>
+<div id="leader" class="card" style="display:none"></div>
+</div></div>
+<script>
+let token=localStorage.getItem("mc_token"), state=null, cells=Array(35).fill(0), selected=-1;
+const $=id=>document.getElementById(id);
+async function api(url,opt={}){opt.headers={...(opt.headers||{}),Authorization:"Bearer "+token,"Content-Type":"application/json"};const r=await fetch(url,opt);const d=await r.json();if(!r.ok)throw Error(d.error||"เกิดข้อผิดพลาด");return d}
+function setMsg(x){$("msg").textContent=x}
+async function register(){try{const d=await api("/api/register",{method:"POST",body:JSON.stringify({username:$("username").value,password:$("password").value,referredBy:$("ref").value})});token=d.token;localStorage.setItem("mc_token",token);show(d.user)}catch(e){setMsg(e.message)}}
+async function login(){try{const d=await api("/api/login",{method:"POST",body:JSON.stringify({username:$("username").value,password:$("password").value})});token=d.token;localStorage.setItem("mc_token",token);show(d.user)}catch(e){setMsg(e.message)}}
+async function boot(){if(!token)return;try{show(await api("/api/me"))}catch{logout()}}
+function show(u){state=u;$("auth").style.display="none";$("game").style.display="block";$("coins").textContent=u.coins;$("energy").textContent=u.energy;$("level").textContent=u.level;$("user").textContent=u.username;$("code").textContent=u.referralCode;$("refs").textContent=u.referralCount;render()}
+function render(){const b=$("board");b.innerHTML="";cells.forEach((v,i)=>{const d=document.createElement("div");d.className="cell"+(selected===i?" sel":"");if(v)d.innerHTML=`<span><div class="coin">🪙</div><div class="lv">Lv.${v}</div></span>`;d.onclick=()=>tap(i);b.appendChild(d)})}
+function tap(i){if(!cells[i])return;if(selected<0){selected=i;render();return}if(selected===i){selected=-1;render();return}if(cells[selected]===cells[i]){const lv=cells[i];cells[selected]=0;cells[i]=lv+1;selected=-1;api("/api/game/merge",{method:"POST",body:JSON.stringify({level:lv})}).then(show).catch(e=>alert(e.message));}else{selected=i;render()}}
+async function spawn(){try{if(state.energy<1)return alert("พลังงานหมด");const empty=cells.map((v,i)=>v? -1:i).filter(i=>i>=0);if(!empty.length)return alert("กระดานเต็ม");cells[empty[Math.floor(Math.random()*empty.length)]]=1;show(await api("/api/game/spawn",{method:"POST"}))}catch(e){alert(e.message)}}
+async function daily(){try{show(await api("/api/daily",{method:"POST"}));alert("รับ Daily Reward แล้ว")}catch(e){alert(e.message)}}
+async function leaderboard(){const a=await (await fetch("/api/leaderboard")).json();$("leader").style.display="block";$("leader").innerHTML="<h3>🏆 Leaderboard</h3>"+a.map((x,i)=>`${i+1}. ${x.username} — ${x.coins} 🪙 · Lv.${x.level} · 👥${x.referral_count}`).join("<br>")}
+function copyCode(){navigator.clipboard?.writeText($("code").textContent);alert("คัดลอกรหัสแล้ว")}
+function logout(){localStorage.removeItem("mc_token");location.reload()}
+boot()
+</script></body></html>
